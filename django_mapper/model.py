@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*
+__all__ = ['HttpMapperModel', 'MapperModel']
 import abc
 
 from django.db import models
@@ -12,7 +13,7 @@ STATUS_LIST = (
                 ('success', 'success'),
             )
 
-class MapperModel(models.Model):
+class BaseMapperModel(models.Model):
     '''
     簡易的mapping model format
 
@@ -20,15 +21,12 @@ class MapperModel(models.Model):
     '''
     class Meta:
         abstract = True
-    
+
+    _base_exclude = ('_status',)
+    _exclude = tuple()
     _status = models.CharField( max_length = 100,
                                 choices = STATUS_LIST,
                                 default = "init")
-    @property
-    def _api(self):
-        raise NotImplementedError("uncreate this function")
-
-
 
     def save(self, status_enforce=None, *args, **kwargs):
         '''
@@ -42,7 +40,8 @@ class MapperModel(models.Model):
         if status_enforce:
             self._status = status_enforce
 
-        super(MapperModel, self).save(*args, **kwargs)
+        super(BaseMapperModel, self).save(*args, **kwargs)
+    
 #-----------------------------------------------
 
     def format(self):
@@ -73,7 +72,6 @@ class MapperModel(models.Model):
             data = self.unformat(data)
             mod = self.__class__.objects.create(**data)
             mod.save(status_enforce="success")
-
 #admin list_display------------------------------------------------
 
     def api_helper(self):
@@ -85,6 +83,27 @@ class MapperModel(models.Model):
     api_helper.allow_tags = True
 
 #-----------------------------------------------
+    def insert(self):
+        raise NotImplementedError("uncreate this function")
+
+    def update(self):
+        raise NotImplementedError("uncreate this function")
+
+    def remove(self):
+        raise NotImplementedError("uncreate this function")
+
+
+
+class HttpMapperModel(BaseMapperModel):
+    '''
+    http api mapper model
+    '''
+
+    @property
+    def _api(self):
+        raise NotImplementedError("uncreate this function")
+
+
     def send(self, api, data={}):
         data.update(self._api.BASE_PARAMS)
         data = urllib.urlencode(data)
@@ -150,12 +169,53 @@ class MapperModel(models.Model):
         return result
         
         
+class MapperModel(BaseMapperModel):
+    class Meta:
+        abstract = True
 
     
+    @property
+    def _key(self):
+        return self.pk
+
+    @property
+    def _model(self):
+        raise NotImplementedError("uncreate this function")
+
+    def get_all(self):
+        return self._model.objects.all()
+
+    def insert(self):
+        assert self._status == "init", "always inserted"
+        data = self.format()
+        result = self._model(**data)
+        result.save()
+        data = self.unformat(result)
+
+        self.__dict__.update(data)
+        self.save(status_enforce = "success")
+        return result
+
+    def update(self):
+        assert self._status == "changed", 'not changed'
 
 
-
+        data = self.format()
         
+        result = self._model.objects.get(data.get(self._key))
+
+        self.save(status_enforce = "success")
+
+        return result
+    
+    def remove(self):
+        assert self._status != "init", "not inserted"
 
 
+        data = self.format()
+        
+        result = self._model.objects.get(data.get(self._key))
+        
+        self.save(status_enforce = "init") 
 
+        return result
