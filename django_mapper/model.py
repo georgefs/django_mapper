@@ -62,16 +62,7 @@ class BaseMapperModel(models.Model):
         '''
         raise NotImplementedError("uncreate this function")
 
-    def sync(self):
-        '''
-        資料同步處理, 可選..
-        '''
-        #self.__class__.clean()
-        self.__class__.objects.all().delete()
-        for data in self.get_all():
-            data = self.unformat(data)
-            mod = self.__class__.objects.create(**data)
-            mod.save(status_enforce="success")
+
 #admin list_display------------------------------------------------
 
     def api_helper(self):
@@ -182,6 +173,10 @@ class MapperModel(BaseMapperModel):
     def _model(self):
         raise NotImplementedError("uncreate this function")
 
+    def __init__(self, *args, **kwargs):
+        self._exclude += (self._key, ) + self._base_exclude
+        return super(MapperModel, self).__init__(*args, **kwargs)
+
     def get_all(self):
         return self._model.objects.all()
 
@@ -194,7 +189,7 @@ class MapperModel(BaseMapperModel):
 
         self.__dict__.update(data)
         self.save(status_enforce = "success")
-        return result
+        return self
 
     def update(self):
         assert self._status == "changed", 'not changed'
@@ -202,7 +197,7 @@ class MapperModel(BaseMapperModel):
 
         data = self.format()
         
-        result = self._model.objects.get(data.get(self._key))
+        result = self._model(**data).save()
 
         self.save(status_enforce = "success")
 
@@ -214,8 +209,26 @@ class MapperModel(BaseMapperModel):
 
         data = self.format()
         
-        result = self._model.objects.get(data.get(self._key))
+        result = self._model.objects.get(pk=data.__dict__.get(self._key))
+        result.delete()
         
         self.save(status_enforce = "init") 
 
         return result
+
+    def get_mapper(self):
+        assert self._status!="init", "status is not {}".format(self._status)
+        return self._model.objects.get(pk=self.__dict__.get(self._key))
+
+    @classmethod
+    def sync(cls, pk):
+        mod = cls.objects.get(**{cls._key:pk})
+        if mod:
+            return mod
+        org = cls._model.objects.get(pk=pk)
+        data = cls().unformat(org)
+        mod = cls.objects.create(**data)
+        mod.save(status_enforce="success")
+        return mod
+
+
