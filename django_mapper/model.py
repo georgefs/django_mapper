@@ -197,8 +197,11 @@ class MapperModel(BaseMapperModel):
 
         data = self.format()
         
-        result = self._model(**data).save()
+        result = self._model(**data)
+        result.save()
+        data = self.unformat(result)
 
+        self.__dict__.update(data)
         self.save(status_enforce = "success")
 
         return result
@@ -209,7 +212,7 @@ class MapperModel(BaseMapperModel):
 
         data = self.format()
         
-        result = self._model.objects.get(pk=data.__dict__.get(self._key))
+        result = self._model.objects.get(pk=self.__dict__.get(self._key))
         result.delete()
         
         self.save(status_enforce = "init") 
@@ -222,13 +225,14 @@ class MapperModel(BaseMapperModel):
 
     @classmethod
     def sync(cls, pk):
-        mod = cls.objects.get(**{cls._key:pk})
-        if mod:
+        try:
+            mod = cls.objects.get(**{cls._key:pk})
+        except Exception,e:
+            org = cls._model.objects.get(pk=pk)
+            data = cls().unformat(org)
+            mod = cls.objects.create(**data)
+            mod.save(status_enforce="success")
+        finally:
             return mod
-        org = cls._model.objects.get(pk=pk)
-        data = cls().unformat(org)
-        mod = cls.objects.create(**data)
-        mod.save(status_enforce="success")
-        return mod
 
 
